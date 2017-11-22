@@ -25,6 +25,7 @@
 #include "esp_common.h"
 #include "pwm.h"
 #include "lwip/udp.h"
+#include "freertos/queue.h"
 
 
 //PIN SETTINGS FOR PWM
@@ -38,37 +39,27 @@
 
 #define PWM_NUM_CHANNEL_NUM    2  //number of PWM Channels
 
+//Дескрипторы задач и очередей
+xTaskHandle xPWM_Task0Handle;	//дескриптор - идентификатор задачи0
 xTaskHandle xPWM_Task1Handle;	//дескриптор - идентификатор задачи1
-xTaskHandle xPWM_Task2Handle;	//дескриптор - идентификатор задачи2
+xQueueHandle xQueueSetDC0;		//дескриптор очереди для канала 0 - 
+xQueueHandle xQueueSetDC0;		//дескриптор очереди для канала 1 - 
+xQueueHandle xQueueDutyCycle;	//дескриптор очереди для передачи Duty Cycle обоих каналов, задаче vUDPReply_Task 
 
+
+portBASE_TYPE xStatusTask0;	//результат создания задачи 0
 portBASE_TYPE xStatusTask1;	//результат создания задачи 1
-portBASE_TYPE xStatusTask2;	//результат создания задачи 2
 
-typedef struct PWM_Param_t {
+typedef struct {
 	uint8 pwm_channel;
-}PWM_Param;
+	uint32 DutyCycle;
+} xData;
 
 
-/* Объявление двух структур PWM_Param */
-PWM_Param xPWM1_Param;
-PWM_Param xPWM2_Param;
+/* Объявление двух структур xData */
+xData xPWM0_Param;
+xData xPWM1_Param;
 
-
-
-/*
-void gpio_isr (uint32 mask, void* arg)
-{
-	printf("Interrupt now\r\n");
-	 delay += delay_increment;
-	 if (delay == 1)
-		 delay_increment = 1;
-	 if (delay == 20)
-		 delay_increment = -1;
-	 // "rearm" the interrupt
-	 uint32_t gpio_status = GPIO_REG_READ(GPIO_STATUS_ADDRESS);
-	 GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, gpio_status );
-}
-*/
 
 //callback function UDP RECEIVE
 /*
@@ -81,20 +72,23 @@ void gpio_isr (uint32 mask, void* arg)
 указав, что его указатель не является NULL.
 Полезная нагрузка, содержащаяся в объекте pbuf, хранится в виде байтового массива.
 */
-void zhan_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_addr *addr, u16_t port)
+void udp_recv_command(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_addr *addr, u16_t port)
 {
   if (p != NULL){
-	uint8_t data = (uint8_t) ((uint8_t*)p->payload)[0]; // преобразование к типу uint8_t из байтового массива
+	printf("UDP rcv %d bytes: ", (*p).len);
+	xData data = (xData) ((xData*)p->payload)[0]; // преобразование к типу xData из байтового массива
 	pbuf_free(p); // освобождаем буффер
-	printf("recv data:%d\n", data);
-	//printf("IP:%d\n", addr);
+	printf("recv data - Channel:%d\n", data.pwm_channel);
+	printf("recv data - Duty:%d\n", data.DutyCycle);
+	/*
 	if (data == 1){
-		  vTaskResume(xPWM_Task1Handle); // Задача готова к работе
+		  //vTaskResume(xPWM_Task0Handle); // Задача готова к работе
 	  }
 	if (data == 0){
-		  vTaskSuspend(xPWM_Task1Handle);// Приостановить задачу
+		  //vTaskSuspend(xPWM_Task0Handle);// Приостановить задачу
 	  }
-	  
+	*/
+	/*  
 	char reply[]="Received X";
 	reply[9] = data + 48;
 	struct pbuf *reply_pbuf;
@@ -102,7 +96,7 @@ void zhan_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_add
 	memcpy(reply_pbuf->payload, reply, sizeof(reply));
 	udp_sendto(pcb, reply_pbuf, addr, 8888);
 	pbuf_free(reply_pbuf);
-	  
+	*/  
 	  
 	}
 	
@@ -110,21 +104,50 @@ void zhan_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_add
 }
 
 
+// Task for send by UDP
+/*
+void vUDPReply_Task(void *pvParameters)
+{
+	printf("welcome to vUDPsendReply_Task!\r\n");
+	// настройка UDP для отправки сообщения клиенту 
+	// Protocol Control Block - блок управления протоколом
+	struct udp_pcb *reply_pcb;
+	reply_pcb = udp_new();
+	
+	struct ip_addr client;
+	IP4_ADDR(&client, 192, 168, 1, 101); //ip адресс компьютера (клиента)
 
+	
+	while (1) {
+		
+		
+		
+		udp_sendto(reply_pcb, p, &client, 8888);
+		pbuf_free(p);
+		
+		
+	}
+	vTaskDelete(NULL);
+}
+*/
 
 // Task for PWM
 void vPWM_Task(void *pvParameters)
 {
 	printf("welcome to vPWM_Task!\r\n");
-	volatile PWM_Param *pxPWM;
-	/* Преобразование типа void* к типу PWM_Param* */
-	pxPWM = (PWM_Param *) pvParameters;
+	volatile xData *pxPWM;
+	/* Преобразование типа void* к типу xData */
+	pxPWM = (xData *) pvParameters;
 	printf("send param channel:%d\n", pxPWM->pwm_channel);
-	int i = 512;
+	printf("send param duty cycle:%d\n", pxPWM->DutyCycle);
 	while (1) {
-		pwm_set_duty(i, pxPWM->pwm_channel); //Set duty to specific channel
+		pwm_set_duty(pxPWM->DutyCycle, pxPWM->pwm_channel); //Set duty to specific channel
 		pwm_start();   //Call this: every time you change duty/period
 		vTaskDelay(1000/portTICK_RATE_MS);
+		
+		
+		
+		
 	}
 	vTaskDelete(NULL);
 }
@@ -190,7 +213,6 @@ void user_init(void)
 	printf("UDP TEST !!!!\r\n");
 	conn_ap_init();
 	
-	
     uint32 io_info[][3] = {
             { PWM_0_OUT_IO_MUX, PWM_0_OUT_IO_FUNC, PWM_0_OUT_IO_NUM }, //Channel 0
             { PWM_1_OUT_IO_MUX, PWM_1_OUT_IO_FUNC, PWM_1_OUT_IO_NUM }, //Channel 1
@@ -200,36 +222,42 @@ void user_init(void)
 	pwm_init(1000, duty, PWM_NUM_CHANNEL_NUM, io_info);
 	
 	// заполнение структуры - нулевой канал
-	xPWM1_Param.pwm_channel = 0;
-	xPWM2_Param.pwm_channel = 1;
+	xPWM0_Param.pwm_channel = 0;
+	xPWM0_Param.DutyCycle = 700;
+	// первый канал
+	xPWM1_Param.DutyCycle = 700;
+	xPWM1_Param.pwm_channel = 1;
 	
+	
+	xStatusTask0 = xTaskCreate(vPWM_Task, "PWM_Task0", 256, &xPWM0_Param, 2, &xPWM_Task0Handle);
 	xStatusTask1 = xTaskCreate(vPWM_Task, "PWM_Task1", 256, &xPWM1_Param, 2, &xPWM_Task1Handle);
-	xStatusTask2 = xTaskCreate(vPWM_Task, "PWM_Task2", 256, &xPWM2_Param, 2, &xPWM_Task2Handle);
 	
+	if (xStatusTask0 == pdPASS) {
+		printf("PWM_Task0 is created\r\n");
+	}
+	else {
+		printf("PWM_Task0 is not created\r\n");
+	}
+		
 	if (xStatusTask1 == pdPASS) {
 		printf("PWM_Task1 is created\r\n");
 	}
 	else {
 		printf("PWM_Task1 is not created\r\n");
 	}
-		
-	if (xStatusTask2 == pdPASS) {
-		printf("PWM_Task2 is created\r\n");
-	}
-	else {
-		printf("PWM_Task2 is not created\r\n");
-	}
 	
+	
+/****LWIP********************************************************/	
 	// Protocol Control Block - блок управления протоколом
-	struct udp_pcb *zhan_pcb;
-	zhan_pcb = udp_new();
-	udp_bind(zhan_pcb, IP_ADDR_ANY, 8888); 		// фильтр для всех, кроме порта 8888
+	struct udp_pcb *request_pcb;
+	request_pcb = udp_new();
+	udp_bind(request_pcb, IP_ADDR_ANY, 8888); 		// фильтр для всех, кроме порта 8888
 	
 	/*вызовом udp_recv мы сообщаем LwIP, 
 	что любой входящий пакет, соответствующий этому фильтру
 	(==, проходящий через этот сокет), должен быть передан
-	функции обратного вызова (callback) с именем zhan_udp_recv для обработки */
-	udp_recv(zhan_pcb, zhan_udp_recv, NULL);
+	функции обратного вызова (callback) с именем udp_recv_command для обработки */
+	udp_recv(request_pcb, udp_recv_command, NULL);
 
 	
 							

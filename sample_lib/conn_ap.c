@@ -5,8 +5,8 @@
 #include "freertos/queue.h"
 #include "conn_ap.h"
 
-#define AP_SSID      "B315"
-#define AP_PASSWORD "120980kam"   
+#define AP_SSID      "zip1982bAksakova"
+#define AP_PASSWORD "sc9or9pion"   
 
 void wifi_handle_event_cb(System_Event_t *evt)
 {
