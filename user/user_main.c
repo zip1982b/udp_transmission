@@ -22,6 +22,7 @@
  *
  */
 
+
 #include "esp_common.h"
 #include "pwm.h"
 #include "lwip/udp.h"
@@ -74,12 +75,46 @@ xData xPWM1_Param;
 */
 void udp_recv_command(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_addr *addr, u16_t port)
 {
-  if (p != NULL){
-	printf("UDP rcv %d bytes: ", (*p).len);
-	xData data = (xData) ((xData*)p->payload)[0]; // преобразование к типу xData из байтового массива
+	
+	if (p != NULL){
+		if ((*p).len <= 6 && ((char*)(*p).payload)[1] == ':'){
+			//char command[(*p).len];
+			printf("UDP rcv %d bytes:\n", (*p).len);
+			char channel_str = (char) ((char*)p->payload)[0];
+			//int iCHN = atoi(channel_str);
+			int iCHN = (int) channel_str;
+			printf("Channel = %d\n", iCHN - '0');
+			
+			
+			char duty_cycle[(*p).len - 2];
+			int i;
+			for (i = 0; i < ((*p).len - 2); ++i){
+				duty_cycle[i] = (char) ((char*)(*p).payload)[i+2];
+			}
+			int iDC = atoi(duty_cycle);
+			printf("Duty Cycle = %d\n", iDC);
+			
+		}
+		else {
+			printf("Error len or structure UDP payload\n");
+		}
+		
+		
+		
+	/*
+	char data1 = (char) ((char*)p->payload)[0];
+	char data2 = (char) ((char*)p->payload)[1];
+	//xData data = (xData) ((xData*)p->payload)[0]; // преобразование к типу xData из байтового массива
+	*/
 	pbuf_free(p); // освобождаем буффер
+	/*
+	printf("recv data:%c\n", data1);
+	printf("recv data:%c\n", data2);
+	*/
+	/*
 	printf("recv data - Channel:%d\n", data.pwm_channel);
 	printf("recv data - Duty:%d\n", data.DutyCycle);
+	*/
 	/*
 	if (data == 1){
 		  //vTaskResume(xPWM_Task0Handle); // Задача готова к работе
