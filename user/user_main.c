@@ -177,7 +177,6 @@ void vPWM_Task(void *pvParameters)
 
 
 // Task for send by UDP
-
 void vUDPReply_Task(void *pvParameters)
 {
 	printf("welcome to vUDPsendReply_Task!\r\n");
@@ -185,26 +184,31 @@ void vUDPReply_Task(void *pvParameters)
 	// Protocol Control Block - блок управления протоколом
 	struct udp_pcb *reply_pcb;
 	reply_pcb = udp_new();
+	struct pbuf *p;
 	struct ip_addr client;
-	IP4_ADDR(&client, 192, 168, 1, 101); //ip адресс компьютера (клиента)
-
+	//IP4_ADDR(&client, 192, 168, 1, 101); //ip адресс компьютера (клиента)
+	IP4_ADDR(&client, 192, 168, 8, 100); //ip адресс компьютера (клиента)
+	xData reply;
+	// заполнение структуры - нулевой канал
+	reply.pwm_channel = 5;
+	reply.DutyCycle = 111;
+	char Reply[] = "Channel: , Duty Cycle:    ";
+	char Channel[0];
+	char DutyCycle[5];
+	
+	//itoa(reply.DutyCycle, DutyCycle, 10);
+	sprintf(Channel, "%d", reply.pwm_channel);
+	sprintf(DutyCycle, "%d", reply.DutyCycle);
+	Reply[8] = Channel[0];
+	Reply[22] = DutyCycle[0];
+	Reply[23] = DutyCycle[1];
+	Reply[24] = DutyCycle[2];
 	
 	while (1) {
-		
-		
-		
+		p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
+		memcpy(p->payload, &Reply, sizeof(Reply));
 		udp_sendto(reply_pcb, p, &client, 8888);
 		pbuf_free(p);
-		
-	/*	 
-	char reply[]="Received X";
-	reply[9] = data + 48;
-	struct pbuf *reply_pbuf;
-	reply_pbuf = pbuf_alloc(PBUF_TRANSPORT, sizeof(reply), PBUF_RAM);
-	memcpy(reply_pbuf->payload, reply, sizeof(reply));
-	udp_sendto(pcb, reply_pbuf, addr, 8888);
-	pbuf_free(reply_pbuf);
-	*/
 		
 	}
 	vTaskDelete(NULL);
@@ -280,7 +284,7 @@ void user_init(void)
 	if (xQueueSetDC0 !=NULL && xQueueSetDC1 !=NULL){
 		portBASE_TYPE xStatusTask0;	//результат создания задачи 0
 		portBASE_TYPE xStatusTask1;	//результат создания задачи 1
-		portBASE_TYPE xStatusUDPreplyTask;	//результат создания задачи vUDPReply_Task
+		
 		uint32 io_info[][3] = {
             { PWM_0_OUT_IO_MUX, PWM_0_OUT_IO_FUNC, PWM_0_OUT_IO_NUM }, //Channel 0
             { PWM_1_OUT_IO_MUX, PWM_1_OUT_IO_FUNC, PWM_1_OUT_IO_NUM }, //Channel 1
@@ -317,11 +321,11 @@ void user_init(void)
 	else {
 		printf("Error - queues is not created\r\n");
 	}
-//**************************************************************************************************************/
+//************ Очередь и задача для отправки данных клиенту *****************************************/
 	xQueueDutyCycle = xQueueCreate(6, sizeof(xData)); // очередь для приёма duty cycle для канала 1 и 2
-	
+	portBASE_TYPE xStatusUDPreplyTask;	//результат создания задачи vUDPReply_Task
 	if (xQueueDutyCycle !=NULL){
-		xStatusUDPreplyTask = xTaskCreate(vUDPReply_Task, "vUDPReply_Task", 256, NULL, 3, &xUDPreply_TaskHandle);
+		xStatusUDPreplyTask = xTaskCreate(vUDPReply_Task, "vUDPReply_Task", 256, NULL, 2, &xUDPreply_TaskHandle);
 		if (xStatusUDPreplyTask == pdPASS){
 			printf("vUDPReply_Task is created\r\n");
 		}
