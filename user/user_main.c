@@ -101,7 +101,7 @@ void udp_recv_command(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_
 		}
 		
 	pbuf_free(p); // освобождаем буффер
-	
+	}
 	if (iCHN  == 1){
 		xStatus = xQueueSendToBack(xQueueSetDC0, &uiDC, 0);//отправляем данные duty cycle в нулевой канал
 		if (xStatus != pdPASS) {
@@ -117,7 +117,7 @@ void udp_recv_command(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_
 			printf("Could not send to the queue1.\r\n");
 		}
 	}  
-	}
+	
 }
 
 
@@ -133,17 +133,55 @@ void vPWM_Task(void *pvParameters)
 	pwm_set_duty(pxPWM->DutyCycle, pxPWM->pwm_channel); //Set duty to specific channel
 	pwm_start();   //Call this: every time you change duty/period
 	uint32 uiReceivedDC; //для считывания из очереди
-	portBASE_TYPE xStatus;
+	portBASE_TYPE xStatusRecv;
+	portBASE_TYPE xStatusSend;
+	
+	// Protocol Control Block - блок управления протоколом
+	struct udp_pcb *reply_pcb;
+	reply_pcb = udp_new();
+	struct pbuf *p;
+	struct ip_addr client;
+	//IP4_ADDR(&client, 192, 168, 1, 101); //ip адресс компьютера (клиента)
+	IP4_ADDR(&client, 192, 168, 8, 102); //ip адресс компьютера (клиента)
+	
+	char Reply[] = "Channel: , Duty Cycle:    ";
+	char Channel[0];
+	char DutyCycle[5];
+	
 	while (1) {
 		//vTaskDelay(1000/portTICK_RATE_MS);
+		//********* for channel 1 ****************
 		if ((pxPWM->pwm_channel)==0){
-			xStatus = xQueueReceive(xQueueSetDC0, &uiReceivedDC, 100/portTICK_RATE_MS);
-			if (xStatus == pdPASS) {
+			xStatusRecv = xQueueReceive(xQueueSetDC0, &uiReceivedDC, 100/portTICK_RATE_MS);
+			if (xStatusRecv == pdPASS) {
 				// DutyCycle успешно принято, вывести его на экран
 				printf("Received Duty Cycle = %d\r\n", uiReceivedDC);
 				//printf("Channel= %d\r\n", pxPWM->pwm_channel);
 				pwm_set_duty(uiReceivedDC, 0); //Set duty to specific channel
+				pwm_start();   //Call this: every time you change duty/period
 				
+				sprintf(DutyCycle, "%d", uiReceivedDC);
+				printf("Send Channel = 1\r\n");
+				printf("Send DC = %d\r\n", uiReceivedDC);
+				
+				Reply[8] = '1';
+				Reply[22] = DutyCycle[0];
+				Reply[23] = DutyCycle[1];
+				Reply[24] = DutyCycle[2];
+				p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
+				memcpy(p->payload, &Reply, sizeof(Reply));
+				udp_sendto(reply_pcb, p, &client, 5555);
+				pbuf_free(p);
+				
+				
+				/*
+				pxPWM->pwm_channel = 1;
+				pxPWM->DutyCycle = uiReceivedDC;
+				xStatusSend = xQueueSendToBack(xQueueDutyCycle, &pxPWM, 0);
+				if (xStatusSend != pdPASS) {
+					printf("Could not send to the queue.\r\n");
+				}
+				*/
 			}
 			/*
 			else {
@@ -153,13 +191,39 @@ void vPWM_Task(void *pvParameters)
 			*/
 			
 		}
+		//********* for channel 2 ****************
 		if ((pxPWM->pwm_channel)==1){
-			xStatus = xQueueReceive(xQueueSetDC1, &uiReceivedDC, 100/portTICK_RATE_MS);
-			if (xStatus == pdPASS) {
+			xStatusRecv = xQueueReceive(xQueueSetDC1, &uiReceivedDC, 100/portTICK_RATE_MS);
+			if (xStatusRecv == pdPASS) {
 				// DutyCycle успешно принято, вывести его на экран
 				printf("Received Duty Cycle = %d\r\n", uiReceivedDC);
 				//printf("Channel= %d\r\n", pxPWM->pwm_channel);
 				pwm_set_duty(uiReceivedDC, 1); //Set duty to specific channel
+				pwm_start();   //Call this: every time you change duty/period
+				
+				sprintf(DutyCycle, "%d", uiReceivedDC);
+				printf("Send Channel = 2\r\n");
+				printf("Send DC = %d\r\n", uiReceivedDC);
+				
+				Reply[8] = '2';
+				Reply[22] = DutyCycle[0];
+				Reply[23] = DutyCycle[1];
+				Reply[24] = DutyCycle[2];
+				p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
+				memcpy(p->payload, &Reply, sizeof(Reply));
+				udp_sendto(reply_pcb, p, &client, 5555);
+				pbuf_free(p);
+				
+				/*
+				pxPWM->pwm_channel = 2;
+				pxPWM->DutyCycle = uiReceivedDC;
+				xStatusSend = xQueueSendToBack(xQueueDutyCycle, &pxPWM, 0);
+				if (xStatusSend != pdPASS) {
+					printf("Could not send to the queue.\r\n");
+				}
+				*/
+				
+				
 			}
 			/*
 			else {
@@ -168,8 +232,7 @@ void vPWM_Task(void *pvParameters)
 			}*/
 				
 		}
-		
-		pwm_start();   //Call this: every time you change duty/period
+		taskYIELD();	
 	}
 	vTaskDelete(NULL);
 }
@@ -177,6 +240,7 @@ void vPWM_Task(void *pvParameters)
 
 
 // Task for send by UDP
+/*
 void vUDPReply_Task(void *pvParameters)
 {
 	printf("welcome to vUDPsendReply_Task!\r\n");
@@ -187,32 +251,35 @@ void vUDPReply_Task(void *pvParameters)
 	struct pbuf *p;
 	struct ip_addr client;
 	//IP4_ADDR(&client, 192, 168, 1, 101); //ip адресс компьютера (клиента)
-	IP4_ADDR(&client, 192, 168, 8, 100); //ip адресс компьютера (клиента)
+	IP4_ADDR(&client, 192, 168, 8, 102); //ip адресс компьютера (клиента)
 	xData reply;
-	// заполнение структуры - нулевой канал
-	reply.pwm_channel = 5;
-	reply.DutyCycle = 111;
+	portBASE_TYPE xStatus;
+	
 	char Reply[] = "Channel: , Duty Cycle:    ";
 	char Channel[0];
 	char DutyCycle[5];
 	
-	//itoa(reply.DutyCycle, DutyCycle, 10);
-	sprintf(Channel, "%d", reply.pwm_channel);
-	sprintf(DutyCycle, "%d", reply.DutyCycle);
-	Reply[8] = Channel[0];
-	Reply[22] = DutyCycle[0];
-	Reply[23] = DutyCycle[1];
-	Reply[24] = DutyCycle[2];
-	
 	while (1) {
-		p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
-		memcpy(p->payload, &Reply, sizeof(Reply));
-		udp_sendto(reply_pcb, p, &client, 8888);
-		pbuf_free(p);
-		
+		xStatus = xQueueReceive(xQueueDutyCycle, &reply, 100/portTICK_RATE_MS);
+		if (xStatus == pdPASS) {
+			sprintf(Channel, "%d", reply.pwm_channel);
+			sprintf(DutyCycle, "%d", reply.DutyCycle);
+			printf("Send Channel = %d\r\n", reply.pwm_channel);
+			printf("Send DC = %d\r\n", reply.DutyCycle);
+			Reply[8] = Channel[0];
+			Reply[22] = DutyCycle[0];
+			Reply[23] = DutyCycle[1];
+			Reply[24] = DutyCycle[2];
+			p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
+			memcpy(p->payload, &Reply, sizeof(Reply));
+			udp_sendto(reply_pcb, p, &client, 5555);
+			pbuf_free(p);
+		}
 	}
 	vTaskDelete(NULL);
 }
+
+*/
 
 
 
@@ -321,7 +388,9 @@ void user_init(void)
 	else {
 		printf("Error - queues is not created\r\n");
 	}
+	
 //************ Очередь и задача для отправки данных клиенту *****************************************/
+/*
 	xQueueDutyCycle = xQueueCreate(6, sizeof(xData)); // очередь для приёма duty cycle для канала 1 и 2
 	portBASE_TYPE xStatusUDPreplyTask;	//результат создания задачи vUDPReply_Task
 	if (xQueueDutyCycle !=NULL){
@@ -336,7 +405,7 @@ void user_init(void)
 	else {
 		printf("Error - xQueueDutyCycle is not created\r\n");
 	}
-	
+	*/
 /****LWIP********************************************************/	
 	// Protocol Control Block - блок управления протоколом
 	struct udp_pcb *request_pcb;
@@ -348,12 +417,6 @@ void user_init(void)
 	(==, проходящий через этот сокет), должен быть передан
 	функции обратного вызова (callback) с именем udp_recv_command для обработки */
 	udp_recv(request_pcb, udp_recv_command, NULL);
-
-	
-							
-	
-	
-	
-	
 }
+
 
