@@ -43,17 +43,17 @@
 //Дескрипторы задач и очередей
 xTaskHandle xPWM_Task0Handle;	//дескриптор - идентификатор задачи0
 xTaskHandle xPWM_Task1Handle;	//дескриптор - идентификатор задачи1
-xTaskHandle xUDPreply_TaskHandle;	//дескриптор - идентификатор задачи1
+//xTaskHandle xUDPreply_TaskHandle;	//дескриптор - идентификатор задачи1
 xQueueHandle xQueueSetDC0;		//дескриптор очереди для канала 0 - 
 xQueueHandle xQueueSetDC1;		//дескриптор очереди для канала 1 - 
-xQueueHandle xQueueDutyCycle;	//дескриптор очереди для передачи Duty Cycle обоих каналов, задаче vUDPReply_Task 
+//xQueueHandle xQueueDutyCycle;	//дескриптор очереди для передачи Duty Cycle обоих каналов, задаче vUDPReply_Task 
 
 
 
 
 typedef struct {
-	uint8 pwm_channel;
-	uint32 DutyCycle;
+	uint8 pwm_channel;	//номер канала 
+	uint32 DutyCycle;	//коэфициент заполенеия
 } xData;
 
 
@@ -81,9 +81,9 @@ void udp_recv_command(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_
 	uint32 uiDC;
 	if (p != NULL){
 		if ((*p).len <= 6 && ((char*)(*p).payload)[1] == ':'){
-			//char command[(*p).len];
-			printf("UDP rcv %d bytes:\n", (*p).len);
+			printf("UDP recv %d bytes:\n", (*p).len);
 			char channel_str = (char) ((char*)p->payload)[0];
+			
 			iCHN = (int) channel_str;
 			iCHN = iCHN - '0';
 			printf("Channel = %d\n", iCHN);
@@ -93,15 +93,16 @@ void udp_recv_command(void *arg, struct udp_pcb *pcb, struct pbuf *p, struct ip_
 			for (i = 0; i < ((*p).len - 2); ++i){
 				duty_cycle[i] = (char) ((char*)(*p).payload)[i+2];
 			}
+			
 			uiDC = atoi(duty_cycle); //int
 			printf("Duty Cycle = %d\n", uiDC);
 		}
 		else {
 			printf("Error len or structure UDP payload\n");
 		}
-		
 	pbuf_free(p); // освобождаем буффер
 	}
+	
 	if (iCHN  == 1){
 		xStatus = xQueueSendToBack(xQueueSetDC0, &uiDC, 0);//отправляем данные duty cycle в нулевой канал
 		if (xStatus != pdPASS) {
@@ -134,7 +135,7 @@ void vPWM_Task(void *pvParameters)
 	pwm_start();   //Call this: every time you change duty/period
 	uint32 uiReceivedDC; //для считывания из очереди
 	portBASE_TYPE xStatusRecv;
-	portBASE_TYPE xStatusSend;
+	//portBASE_TYPE xStatusSend;
 	
 	// Protocol Control Block - блок управления протоколом
 	struct udp_pcb *reply_pcb;
@@ -144,9 +145,9 @@ void vPWM_Task(void *pvParameters)
 	//IP4_ADDR(&client, 192, 168, 1, 101); //ip адресс компьютера (клиента)
 	IP4_ADDR(&client, 192, 168, 8, 102); //ip адресс компьютера (клиента)
 	
-	char Reply[] = "Channel: , Duty Cycle:    ";
+	char Reply[] = "Channel:x, Duty Cycle:xxxx";
 	char Channel[0];
-	char DutyCycle[5];
+	char DutyCycle[4];
 	
 	while (1) {
 		//vTaskDelay(1000/portTICK_RATE_MS);
@@ -165,13 +166,26 @@ void vPWM_Task(void *pvParameters)
 				printf("Send DC = %d\r\n", uiReceivedDC);
 				
 				Reply[8] = '1';
-				Reply[22] = DutyCycle[0];
-				Reply[23] = DutyCycle[1];
-				Reply[24] = DutyCycle[2];
+				
+				int i;
+				int k = 22;
+				printf ("Длина строки DUTY CYCLE «%s» - %d символов\n", DutyCycle, strlen(DutyCycle));
+				for (i = 0; i < strlen(DutyCycle); ++i){
+					Reply[k] = DutyCycle[i];
+					k++;
+				}
+				
+				
 				p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
 				memcpy(p->payload, &Reply, sizeof(Reply));
 				udp_sendto(reply_pcb, p, &client, 5555);
 				pbuf_free(p);
+				
+				k = 22;
+				for (i = 0; i < 4; ++i){
+					Reply[k] = 'x';
+					k++;
+				}
 				
 				
 				/*
@@ -206,13 +220,24 @@ void vPWM_Task(void *pvParameters)
 				printf("Send DC = %d\r\n", uiReceivedDC);
 				
 				Reply[8] = '2';
-				Reply[22] = DutyCycle[0];
-				Reply[23] = DutyCycle[1];
-				Reply[24] = DutyCycle[2];
+				int i;
+				int k = 22;
+				printf ("Длина строки DUTY CYCLE «%s» - %d символов\n", DutyCycle, strlen(DutyCycle));
+				for (i = 0; i < strlen(DutyCycle); ++i){
+					Reply[k] = DutyCycle[i];
+					k++;
+				}
+				
 				p = pbuf_alloc(PBUF_TRANSPORT, sizeof(Reply), PBUF_RAM);
 				memcpy(p->payload, &Reply, sizeof(Reply));
 				udp_sendto(reply_pcb, p, &client, 5555);
 				pbuf_free(p);
+				
+				k = 22;
+				for (i = 0; i < 4; ++i){
+					Reply[k] = 'x';
+					k++;
+				}
 				
 				/*
 				pxPWM->pwm_channel = 2;
